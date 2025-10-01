@@ -7,7 +7,7 @@ load_dotenv()  # load environment variables from .env file
 class Settings(BaseModel):
     # Database
     MONGODB_URL: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017/")
-    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "college-predictor")
+    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "advertisements_db")
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
         
     # Application

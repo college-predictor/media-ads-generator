@@ -7,6 +7,7 @@ from app.core.firebase_auth import GoogleAuthBackend
 from app.services.connection_manager import ConnectionManager
 from app.db.redis import session_manager
 from app.services.chatbot import ChatbotService
+from app.prompts.prompts import Prompts
 
 router = APIRouter()
 security = HTTPBearer()
@@ -35,7 +36,7 @@ async def websocket_endpoint(websocket: WebSocket, uid: str):
         print(f"No session found for UID {uid}, using default user data")
 
         if uid not in chats:
-            chats[uid] = ChatbotService()
+            chats[uid] = ChatbotService(Prompts.INFORMATION_COLLECTION_PROMPT.value)
 
         chatbot_service: ChatbotService = chats[uid]
 
@@ -45,7 +46,7 @@ async def websocket_endpoint(websocket: WebSocket, uid: str):
         # Send welcome message
         welcome_message = {
             "role": "assistant",
-            "message": f"Welcome {user_data.get('name')}! How can I help you today?",
+            "message": f"Welcome {user_data.get('name')}! Let's generate a perfect advertisement post for you.",
             "timestamp": datetime.now().isoformat()
         }
         await manager.send_personal_message(json.dumps(welcome_message), uid)
@@ -56,12 +57,20 @@ async def websocket_endpoint(websocket: WebSocket, uid: str):
                 # Receive message from client
                 data = await websocket.receive_text()
                 message_data = json.loads(data)
-                
-                # Process the message
-                response = await chatbot_service.process_user_message(message_data.get("message"))
 
-                # Send response back to client
-                await manager.send_personal_message(json.dumps(response), uid)
+                if message_data.get("template_id", False):
+                    template_id = message_data["template_id"]
+                    # Fetch and send the template
+                    template = await chatbot_service.content_fetcher.fetch_template(template_id)
+                    async for response in chatbot_service.generate_templates(template):
+                        await manager.send_personal_message(json.dumps(response), uid)
+                    
+                    await manager.send_personal_message(json.dumps(template), uid)
+                else:
+                    # Process the message
+                    async for response in chatbot_service.process_user_message(message_data.get("message")):
+                        # Send response back to client
+                        await manager.send_personal_message(json.dumps(response), uid)
                 
             except WebSocketDisconnect:
                 break

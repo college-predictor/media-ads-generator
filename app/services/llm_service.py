@@ -4,26 +4,25 @@ import base64
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from app.models.llm_models import LLMModel
 
 class LLMService(ABC):
     @abstractmethod
-    async def generate_structured_output(self, model: LLMModel, messages: dict, schema: BaseModel) -> dict:
+    async def generate_structured_output(self, model: str, messages: dict, schema: BaseModel) -> dict:
         """Generate structured output based on the provided schema"""
         pass
 
     @abstractmethod
-    async def generate_image(self, model: LLMModel, messages: dict) -> bytes:
+    async def generate_image(self, model: str, messages: dict) -> bytes:
         """Generate an image based on the provided prompt"""
         pass
 
     @abstractmethod
-    async def generate_text(self, model: LLMModel, messages: dict) -> str:
+    async def generate_text(self, model: str, messages: dict) -> str:
         """Generate text based on the provided prompt"""
         pass
 
     @abstractmethod
-    async def stream_response(self, model: LLMModel, messages: dict) -> AsyncIterator[str]:
+    async def stream_response(self, model: str, messages: dict) -> AsyncIterator[str]:
         """Stream response in real-time"""
         pass
 
@@ -33,26 +32,26 @@ class OpenAIService(LLMService):
         self.api_key = api_key
         self.client = AsyncOpenAI(api_key=api_key)
 
-    async def generate_structured_output(self, model: LLMModel, messages: dict, schema: BaseModel) -> dict:
+    async def generate_structured_output(self, model: str, messages: dict, schema: BaseModel) -> dict:
         """Generate structured output using OpenAI's structured output parsing"""
         try:
             
             response = await self.client.responses.parse(
-                model=model.name,
+                model=model,
                 input=messages,
                 text_format=schema,
             )
             
-            return response.output_parsed.dict() if hasattr(response.output_parsed, 'dict') else response.output_parsed
+            return response.output_parsed
             
         except Exception as e:
             raise Exception(f"OpenAI structured output generation failed: {str(e)}")
 
-    async def generate_image(self, model: LLMModel, messages: dict) -> bytes:
+    async def generate_image(self, model: str, messages: dict) -> bytes:
         """Generate image using OpenAI's image generation"""
         try:
             response = await self.client.responses.create(
-                model=model.name,
+                model=model,
                 input=messages,
                 tools=[{"type": "image_generation"}],
             )
@@ -73,7 +72,7 @@ class OpenAIService(LLMService):
         except Exception as e:
             raise Exception(f"OpenAI image generation failed: {str(e)}")
 
-    async def generate_text(self, model: LLMModel, messages: dict) -> str:
+    async def generate_text(self, model: str, messages: dict) -> str:
         """Generate text using OpenAI"""
         try:
             response = await self.client.responses.create(
@@ -86,11 +85,11 @@ class OpenAIService(LLMService):
         except Exception as e:
             raise Exception(f"OpenAI text generation failed: {str(e)}")
 
-    async def stream_response(self, model: LLMModel, messages: dict) -> AsyncIterator[str]:
+    async def stream_response(self, model: str, messages: dict) -> AsyncIterator[str]:
         """Stream response from OpenAI in real-time"""
         try:
             stream = await self.client.responses.create(
-                model=model.name,
+                model=mode,
                 input=messages,
                 stream=True,
             )

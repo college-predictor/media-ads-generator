@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 
 class AdvertisementTemplate(BaseModel):
@@ -6,30 +6,25 @@ class AdvertisementTemplate(BaseModel):
     title: str
     description: str
     image_url: str
-    embedding_code: List[float]
 
     def to_dict(self):
         return {
             "title": self.title,
             "description": self.description,
             "image_url": self.image_url,
-            "embedding_code": self.embedding_code,
         }
     
 
-class Post(BaseModel):
+class ImageCaptionTags(BaseModel):
+    caption: str
+    tags: List[str]
+
+class ImageDescriptions(BaseModel):
+    descriptions: List[str] = Field(default_factory=list, description="List of 3 different description of a advertisement post image targetting 3 different audiences in less than 30 words.")
+
+class Post(ImageCaptionTags):
     id: str
     title: str
     content: str
-    tags: List[str]
-    description: str = ""
-    image_url: str = ""
-
-    def to_dict(self):
-        return {
-            "title": self.title,
-            "content": self.content,
-            "tags": self.tags,
-            "description": self.description,
-            "image_url": self.image_url,
-        }
+    description: str
+    image_url: str
