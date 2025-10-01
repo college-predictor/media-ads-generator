@@ -93,44 +93,111 @@ class ChatbotService:
             "loading": False
         }
 
-        # Run image generation in parallel
-        async def generate_single_image(des):
-            system_content = Prompts.AD_IMAGE_GENERATION_PROMPT.value
-            # Generate image (returns bytes)
-            image_bytes = await self.llm_service.generate_image("gpt-5", [{"role": "system", "content": system_content}, {"role": "user", "content": f"Generate image on the basis of this description: {des}"}])
-            
-            # Convert bytes to base64 string
-            base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            return base64_image
+        # Run image generation in parallel with error handling
+        async def generate_single_image(des, index):
+            try:
+                system_content = Prompts.AD_IMAGE_GENERATION_PROMPT.value
+                # Generate image (returns bytes)
+                image_bytes = await self.llm_service.generate_image("gpt-5", [{"role": "system", "content": system_content}, {"role": "user", "content": f"Generate image on the basis of this description: {des}"}])
+                
+                # Convert bytes to base64 string
+                base64_image = base64.b64encode(image_bytes).decode('utf-8')
+                print(f"Successfully generated image {index + 1}")
+                return {"success": True, "image": base64_image, "description": des, "index": index}
+            except Exception as e:
+                print(f"Failed to generate image {index + 1}: {str(e)}")
+                return {"success": False, "error": str(e), "description": des, "index": index}
 
         # Generate all images in parallel
-        image_tasks = [generate_single_image(des) for des in descriptions.descriptions]
-        images = await asyncio.gather(*image_tasks)
-        
-        # Generate captions and tags in parallel
-        caption_tasks = [self.caption_tags(image) for image in images]
-        captions_and_tags = await asyncio.gather(*caption_tasks)
+        image_tasks = [generate_single_image(des, i) for i, des in enumerate(descriptions.descriptions)]
+        image_results = await asyncio.gather(*image_tasks, return_exceptions=True)
 
+        # Filter successful image results
+        successful_images = []
+        for result in image_results:
+            if isinstance(result, dict) and result.get("success"):
+                successful_images.append(result)
+            elif isinstance(result, Exception):
+                print(f"Image generation exception: {str(result)}")
+        
+        print(f"Successfully generated {len(successful_images)} out of {len(descriptions.descriptions)} images")
+        
+        # Generate captions and tags in parallel for successful images only
+        async def generate_caption_with_error_handling(image_data):
+            try:
+                caption_tags = await self.caption_tags(image_data["image"])
+                print(f"Successfully generated caption for image {image_data['index'] + 1}")
+                return {"success": True, "caption_tags": caption_tags, "image_data": image_data}
+            except Exception as e:
+                print(f"Failed to generate caption for image {image_data['index'] + 1}: {str(e)}")
+                # Return default caption and tags on failure
+                return {
+                    "success": False, 
+                    "caption_tags": ImageCaptionTags(
+                        caption="Amazing advertisement!", 
+                        tags=["#ad", "#product", "#marketing", "#brand", "#promotion"]
+                    ), 
+                    "image_data": image_data,
+                    "error": str(e)
+                }
+        
+        caption_tasks = [generate_caption_with_error_handling(img_data) for img_data in successful_images]
+        caption_results = await asyncio.gather(*caption_tasks, return_exceptions=True)
+
+        # Filter successful caption results and create templates
+        final_templates = []
+        successful_captions = 0
+        failed_captions = 0
+        
+        for result in caption_results:
+            if isinstance(result, dict):
+                image_data = result["image_data"]
+                caption_tags = result["caption_tags"]
+                
+                if result.get("success"):
+                    successful_captions += 1
+                else:
+                    failed_captions += 1
+                
+                # Create template regardless of caption success (with fallback for failed captions)
+                template = {
+                    "title": f"Advertisement Template {len(final_templates) + 1}",
+                    "description": image_data["description"],
+                    "image_url": f"data:image/png;base64,{image_data['image']}",
+                    "caption": caption_tags.caption,
+                    "tags": caption_tags.tags,
+                    "template_number": len(final_templates) + 1,
+                    "original_index": image_data["index"]
+                }
+                
+                if not result.get("success"):
+                    template["caption_warning"] = "Used default caption due to generation failure"
+                
+                final_templates.append(template)
+        
+        # Send progress update
+        total_requested = len(descriptions.descriptions)
+        total_generated = len(final_templates)
+        
         yield {
             "category": "text",
             "role": "assistant",
-            "message": f"Generated {len(images)} images",
+            "message": f"Successfully generated {total_generated} out of {total_requested} advertisement templates. Images: {len(successful_images)} successful, Captions: {successful_captions} successful, {failed_captions} with fallbacks.",
             "timestamp": datetime.now().isoformat(),
-            "loading": True,
+            "loading": False,
         }
-        templates = []
-        for i in range(len(images)):
-            templates.append({
-                "title": f"Advertisement Template {i+1}",
-                "description": descriptions.descriptions[i],
-                "image_url": f"data:image/png;base64,{images[i]}",  # images[i] is already base64 string
-                "caption": captions_and_tags[i].caption,
-                "tags": captions_and_tags[i].tags,
-                "template_number": i + 1
-            })
+        
+        # Yield final templates
         yield {
-            "templates": templates,
+            "templates": final_templates,
             "category": "final_templates",
             "timestamp": datetime.now().isoformat(),
-            "loading": False
+            "loading": False,
+            "stats": {
+                "total_requested": total_requested,
+                "total_generated": total_generated,
+                "images_successful": len(successful_images),
+                "captions_successful": successful_captions,
+                "captions_with_fallback": failed_captions
+            }
         }
