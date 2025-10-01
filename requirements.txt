@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pymongo
+pydantic[email]
+python-decouple
+redis
+beanie
+motor
+python-dotenv
+firebase-admin
+openai
