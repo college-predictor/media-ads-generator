@@ -44,8 +44,6 @@ async def lifespan(app: FastAPI):
         print(f"⚠️ Error closing Redis connection: {e}")
 
 app = FastAPI(
-    title="Educational Website API",
-    description="A FastAPI backend for educational website similar to shiksha.com",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -68,7 +66,7 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/")
 async def root():
-    return {"message": "College Predictor Website API", "version": "1.0.0"}
+    return {"message": "Media Ad Generator Website API", "version": "1.0.0"}
 
 @app.get("/health")
 async def health_check():
