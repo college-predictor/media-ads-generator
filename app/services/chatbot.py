@@ -5,6 +5,7 @@ from app.db.database import ContentFetcher
 from app.prompts.prompts import Prompts
 from app.models.advertisements import ImageCaptionTags, ImageDescriptions
 import base64
+import asyncio
 
 class ChatbotService:
     def __init__(self, system_prompt: str = None):
@@ -92,42 +93,43 @@ class ChatbotService:
             "loading": False
         }
 
-        images = []
-        captions_and_tags = []
-        for des in descriptions.descriptions:
+        # Run image generation in parallel
+        async def generate_single_image(des):
             system_content = Prompts.AD_IMAGE_GENERATION_PROMPT.value
             # Generate image (returns bytes)
             image_bytes = await self.llm_service.generate_image("gpt-5", [{"role": "system", "content": system_content}, {"role": "user", "content": f"Generate image on the basis of this description: {des}"}])
             
             # Convert bytes to base64 string
             base64_image = base64.b64encode(image_bytes).decode('utf-8')
-            images.append(base64_image)
-            
-            # Pass base64 string to caption_tags
-            caption_tag = await self.caption_tags(base64_image)
-            captions_and_tags.append(caption_tag)
+            return base64_image
 
-            yield {
-                "category": "text",
-                "role": "assistant",
-                "message": f"Generated image",
-                "timestamp": datetime.now().isoformat(),
-                "loading": True,
-            }
+        # Generate all images in parallel
+        image_tasks = [generate_single_image(des) for des in descriptions.descriptions]
+        images = await asyncio.gather(*image_tasks)
         
+        # Generate captions and tags in parallel
+        caption_tasks = [self.caption_tags(image) for image in images]
+        captions_and_tags = await asyncio.gather(*caption_tasks)
+
         yield {
-            "templates": [
-                {
-                    "id": f"template_{i+1}",
-                    "title": f"Advertisement Template {i+1}",
-                    "description": descriptions.descriptions[i],
-                    "image_url": f"data:image/png;base64,{images[i]}",  # images[i] is already base64 string
-                    "caption": captions_and_tags[i].caption,
-                    "tags": captions_and_tags[i].tags,
-                    "template_number": i + 1
-                }
-                for i in range(len(images))
-            ],
+            "category": "text",
+            "role": "assistant",
+            "message": f"Generated {len(images)} images",
+            "timestamp": datetime.now().isoformat(),
+            "loading": True,
+        }
+        templates = []
+        for i in range(len(images)):
+            templates.append({
+                "title": f"Advertisement Template {i+1}",
+                "description": descriptions.descriptions[i],
+                "image_url": f"data:image/png;base64,{images[i]}",  # images[i] is already base64 string
+                "caption": captions_and_tags[i].caption,
+                "tags": captions_and_tags[i].tags,
+                "template_number": i + 1
+            })
+        yield {
+            "templates": templates,
             "category": "final_templates",
             "timestamp": datetime.now().isoformat(),
             "loading": False
